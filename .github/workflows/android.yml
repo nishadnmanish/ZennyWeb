@@ -2,7 +2,7 @@ name: Build ZennyWeb APK
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, upgrade/browser-features]
   workflow_dispatch:
 
 permissions:
