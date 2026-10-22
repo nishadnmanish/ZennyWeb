@@ -4,7 +4,7 @@ plugins {
 
 android {
     namespace 'com.zennyweb.browser'
-    compileSdk 36
+    compileSdk 37
 
     defaultConfig {
         applicationId 'com.zennyweb.browser'
