@@ -1,0 +1,6 @@
+ZennyWeb feature update
+1. Tabs: create, switch, and close tabs.
+2. Bookmarks: save website URL and title.
+3. Bookmarks list: view and open saved bookmarks.
+4. Preserve existing navigation controls.
+5. Build with GitHub Actions before installing.
