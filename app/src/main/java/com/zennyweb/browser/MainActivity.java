@@ -15,6 +15,10 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.*;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoSession;
 import org.mozilla.geckoview.GeckoView;
@@ -144,26 +148,18 @@ public class MainActivity extends Activity {
             -1, 0, 1
         ));
 
-        // Bottom navigation
-        LinearLayout bottom = new LinearLayout(this);
-        bottom.setPadding(dp(8), dp(4), dp(8), dp(6));
-        bottom.setGravity(Gravity.CENTER);
-        bottom.addView(button("‹", () -> {
-            if (session != null) session.goBack();
-        }), new LinearLayout.LayoutParams(0, dp(46), 1));
-        bottom.addView(button("›", () -> {
-            if (session != null) session.goForward();
-        }), new LinearLayout.LayoutParams(0, dp(46), 1));
-        bottom.addView(button("⌂", this::goHome),
-            new LinearLayout.LayoutParams(0, dp(46), 1));
-        bottom.addView(button("↻", () -> {
-            if (session != null) session.reload();
-        }), new LinearLayout.LayoutParams(0, dp(46), 1));
-        bottom.addView(button("☰", this::showMenu),
-            new LinearLayout.LayoutParams(0, dp(46), 1));
-        root.addView(bottom);
+
 
         setContentView(root);
+
+        ViewCompat.setOnApplyWindowInsetsListener(root, (view, windowInsets) -> {
+            Insets bars = windowInsets.getInsets(
+                WindowInsetsCompat.Type.systemBars()
+            );
+            view.setPadding(0, bars.top, 0, bars.bottom);
+            return windowInsets;
+        });
+        ViewCompat.requestApplyInsets(root);
 
         address.setOnEditorActionListener((v, action, event) -> {
             if (action == EditorInfo.IME_ACTION_GO ||
@@ -348,6 +344,11 @@ public class MainActivity extends Activity {
 
     private void openUrl(String url) {
         urls.set(currentTab, url);
+        if (url != null && url.startsWith("http")) {
+            prefs.edit()
+                .putString("hist_" + System.currentTimeMillis(), url)
+                .apply();
+        }
         address.setText(url);
         homePage.setVisibility(View.GONE);
         browser.setVisibility(View.VISIBLE);
