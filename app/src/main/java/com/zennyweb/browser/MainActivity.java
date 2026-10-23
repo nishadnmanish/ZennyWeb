@@ -1,19 +1,19 @@
 package com.zennyweb.browser;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.os.Bundle;
 import android.graphics.Color;
-import android.view.View;
-import android.view.inputmethod.EditorInfo;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.text.InputType;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-import android.widget.Toast;
-import android.app.AlertDialog;
+import android.view.Gravity;
+import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.*;
 
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoSession;
@@ -21,104 +21,151 @@ import org.mozilla.geckoview.GeckoView;
 
 import java.net.URLEncoder;
 import java.util.ArrayList;
+import java.util.Map;
 
 public class MainActivity extends Activity {
     private static GeckoRuntime runtime;
     private final ArrayList<GeckoSession> sessions = new ArrayList<>();
-    private final ArrayList<String> tabUrls = new ArrayList<>();
-    private GeckoSession session;
-    private GeckoView browser;
-    private EditText address;
+    private final ArrayList<String> urls = new ArrayList<>();
+
     private LinearLayout root;
-    private LinearLayout controls;
-    private LinearLayout tabBar;
-    private SharedPreferences bookmarks;
+    private EditText address;
+    private FrameLayout content;
+    private LinearLayout homePage;
+    private GeckoView browser;
+    private GeckoSession session;
+    private SharedPreferences prefs;
     private int currentTab = 0;
 
-    private int dp(float value) {
-        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    private final String HOME = "zennyhome://home";
+    private final int BG = Color.rgb(24, 23, 29);
+    private final int PANEL = Color.rgb(48, 46, 54);
+    private final int WHITE = Color.rgb(245, 244, 248);
+
+    private int dp(float n) {
+        return (int)(n * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private GradientDrawable shape(int color, int radius) {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(color);
+        d.setCornerRadius(dp(radius));
+        return d;
+    }
+
+    private TextView text(String value, int size, int color) {
+        TextView t = new TextView(this);
+        t.setText(value);
+        t.setTextSize(size);
+        t.setTextColor(color);
+        t.setGravity(Gravity.CENTER_VERTICAL);
+        return t;
+    }
+
+    private Button button(String label, Runnable action) {
+        Button b = new Button(this);
+        b.setText(label);
+        b.setTextColor(WHITE);
+        b.setTextSize(12);
+        b.setAllCaps(false);
+        b.setBackgroundTintList(
+            android.content.res.ColorStateList.valueOf(PANEL)
+        );
+        b.setOnClickListener(v -> action.run());
+        return b;
     }
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(BG);
 
         if (runtime == null) runtime = GeckoRuntime.create(this);
-        bookmarks = getSharedPreferences("zenny_bookmarks", MODE_PRIVATE);
+        prefs = getSharedPreferences("zennyweb_data", MODE_PRIVATE);
 
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(15, 18, 30));
+        root.setBackgroundColor(BG);
 
-        TextView brand = new TextView(this);
-        brand.setText("  ZennyWeb");
-        brand.setTextSize(25);
-        brand.setTextColor(Color.WHITE);
-        brand.setPadding(dp(12), dp(10), dp(12), dp(10));
-        brand.setTypeface(null, android.graphics.Typeface.BOLD);
-        root.addView(brand);
+        // Firefox-inspired top address bar
+        LinearLayout top = new LinearLayout(this);
+        top.setGravity(Gravity.CENTER_VERTICAL);
+        top.setPadding(dp(10), dp(8), dp(8), dp(8));
 
-        tabBar = new LinearLayout(this);
-        tabBar.setOrientation(LinearLayout.HORIZONTAL);
-        root.addView(tabBar);
+        LinearLayout addressBox = new LinearLayout(this);
+        addressBox.setGravity(Gravity.CENTER_VERTICAL);
+        addressBox.setPadding(dp(12), 0, dp(6), 0);
+        addressBox.setBackground(shape(PANEL, 32));
 
-        LinearLayout bar = new LinearLayout(this);
-        bar.setOrientation(LinearLayout.HORIZONTAL);
-        bar.setPadding(dp(8), dp(4), dp(8), dp(8));
+        TextView globe = text("🌐", 20, WHITE);
+        addressBox.addView(globe);
 
         address = new EditText(this);
         address.setSingleLine(true);
-        address.setTextColor(Color.BLACK);
-        address.setHintTextColor(Color.DKGRAY);
-        address.setHint("Search or enter website");
-        address.setTextSize(15);
-        address.setPadding(dp(12), 0, dp(8), 0);
-        address.setBackgroundTintList(
-            android.content.res.ColorStateList.valueOf(Color.WHITE)
-        );
-        address.setInputType(
-            InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI
-        );
+        address.setTextSize(16);
+        address.setTextColor(WHITE);
+        address.setHintTextColor(Color.LTGRAY);
+        address.setHint("Search or enter address");
+        address.setBackgroundColor(Color.TRANSPARENT);
+        address.setPadding(dp(8), 0, dp(4), 0);
+        address.setInputType(InputType.TYPE_CLASS_TEXT |
+            InputType.TYPE_TEXT_VARIATION_URI);
         address.setImeOptions(EditorInfo.IME_ACTION_GO);
-        bar.addView(address, new LinearLayout.LayoutParams(0, dp(48), 1));
+        addressBox.addView(address, new LinearLayout.LayoutParams(
+            0, dp(48), 1
+        ));
 
-        Button go = new Button(this);
-        go.setText("Go");
-        bar.addView(go, new LinearLayout.LayoutParams(dp(64), dp(48)));
-        root.addView(bar);
+        addressBox.setOnClickListener(v -> address.requestFocus());
+        top.addView(addressBox, new LinearLayout.LayoutParams(0, dp(52), 1));
 
-        controls = new LinearLayout(this);
-        controls.setOrientation(LinearLayout.HORIZONTAL);
-        controls.setPadding(dp(4), 0, dp(4), dp(4));
-        addControl(controls, "Back", v -> {
-            if (session != null) session.goBack();
-        });
-        addControl(controls, "Forward", v -> {
-            if (session != null) session.goForward();
-        });
-        addControl(controls, "Reload", v -> {
-            if (session != null) session.reload();
-        });
-        addControl(controls, "Home", v -> loadHome());
-        root.addView(controls);
+        Button tabCount = button("1", this::showTabs);
+        top.addView(tabCount, new LinearLayout.LayoutParams(dp(54), dp(48)));
 
-        LinearLayout extras = new LinearLayout(this);
-        extras.setOrientation(LinearLayout.HORIZONTAL);
-        addControl(extras, "+ Tab", v -> newTab("https://www.google.com/"));
-        addControl(extras, "Tabs", v -> showTabs());
-        addControl(extras, "Bookmark", v -> saveBookmark());
-        addControl(extras, "Saved", v -> showBookmarks());
-        root.addView(extras);
+        Button menu = button("⋮", this::showMenu);
+        menu.setTextSize(24);
+        top.addView(menu, new LinearLayout.LayoutParams(dp(46), dp(48)));
+        root.addView(top);
+
+        // Browser and custom homepage share the same area
+        content = new FrameLayout(this);
 
         browser = new GeckoView(this);
-        root.addView(browser, new LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, 0, 1
+        content.addView(browser, new FrameLayout.LayoutParams(
+            -1, -1
         ));
+
+        homePage = buildHomePage();
+        content.addView(homePage, new FrameLayout.LayoutParams(
+            -1, -1
+        ));
+
+        root.addView(content, new LinearLayout.LayoutParams(
+            -1, 0, 1
+        ));
+
+        // Bottom navigation
+        LinearLayout bottom = new LinearLayout(this);
+        bottom.setPadding(dp(8), dp(4), dp(8), dp(6));
+        bottom.setGravity(Gravity.CENTER);
+        bottom.addView(button("‹", () -> {
+            if (session != null) session.goBack();
+        }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        bottom.addView(button("›", () -> {
+            if (session != null) session.goForward();
+        }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        bottom.addView(button("⌂", this::goHome),
+            new LinearLayout.LayoutParams(0, dp(46), 1));
+        bottom.addView(button("↻", () -> {
+            if (session != null) session.reload();
+        }), new LinearLayout.LayoutParams(0, dp(46), 1));
+        bottom.addView(button("☰", this::showMenu),
+            new LinearLayout.LayoutParams(0, dp(46), 1));
+        root.addView(bottom);
 
         setContentView(root);
 
-        go.setOnClickListener(v -> navigate());
-        address.setOnEditorActionListener((view, action, event) -> {
+        address.setOnEditorActionListener((v, action, event) -> {
             if (action == EditorInfo.IME_ACTION_GO ||
                 action == EditorInfo.IME_ACTION_DONE) {
                 navigate();
@@ -127,30 +174,103 @@ public class MainActivity extends Activity {
             return false;
         });
 
-        newTab("https://www.google.com/");
+        newTab(HOME);
     }
 
-    private void addControl(
-        LinearLayout parent, String label, View.OnClickListener listener
-    ) {
-        Button button = new Button(this);
-        button.setText(label);
-        button.setTextSize(10);
-        parent.addView(button, new LinearLayout.LayoutParams(0, dp(42), 1));
-        button.setOnClickListener(listener);
+    private LinearLayout buildHomePage() {
+        LinearLayout page = new LinearLayout(this);
+        page.setOrientation(LinearLayout.VERTICAL);
+        page.setPadding(dp(20), dp(24), dp(20), dp(20));
+        page.setBackground(new GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            new int[] {
+                Color.rgb(225, 145, 44),
+                Color.rgb(155, 67, 31),
+                Color.rgb(49, 31, 39)
+            }
+        ));
+
+        TextView logo = text("🌐", 66, WHITE);
+        logo.setGravity(Gravity.CENTER);
+        page.addView(logo, new LinearLayout.LayoutParams(-1, dp(100)));
+
+        TextView title = text("ZennyWeb", 32, Color.BLACK);
+        title.setTypeface(null, Typeface.BOLD);
+        title.setGravity(Gravity.CENTER);
+        page.addView(title);
+
+        TextView subtitle = text("Your web, your way", 15, WHITE);
+        subtitle.setGravity(Gravity.CENTER);
+        subtitle.setPadding(0, dp(4), 0, dp(24));
+        page.addView(subtitle);
+
+        TextView shortcuts = text("Shortcuts", 21, Color.BLACK);
+        shortcuts.setPadding(0, dp(8), 0, dp(12));
+        page.addView(shortcuts);
+
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER);
+        addShortcut(row, "G", "Google", "https://www.google.com/");
+        addShortcut(row, "▶", "YouTube", "https://m.youtube.com/");
+        addShortcut(row, "W", "Wikipedia", "https://www.wikipedia.org/");
+        page.addView(row);
+
+        TextView tip = text("Search the web or enter a website above",
+            14, WHITE);
+        tip.setGravity(Gravity.CENTER);
+        tip.setPadding(0, dp(28), 0, dp(12));
+        page.addView(tip);
+
+        Button saved = button("★  Saved bookmarks", this::showBookmarks);
+        page.addView(saved, new LinearLayout.LayoutParams(-1, dp(48)));
+
+        return page;
+    }
+
+    private void addShortcut(LinearLayout row, String symbol,
+                             String label, String url) {
+        LinearLayout item = new LinearLayout(this);
+        item.setOrientation(LinearLayout.VERTICAL);
+        item.setGravity(Gravity.CENTER);
+        item.setPadding(dp(4), dp(8), dp(4), dp(8));
+
+        TextView icon = text(symbol, 27, WHITE);
+        icon.setTypeface(null, Typeface.BOLD);
+        icon.setGravity(Gravity.CENTER);
+        icon.setBackground(shape(BG, 50));
+        item.addView(icon, new LinearLayout.LayoutParams(dp(60), dp(60)));
+
+        TextView name = text(label, 12, Color.BLACK);
+        name.setGravity(Gravity.CENTER);
+        name.setPadding(0, dp(6), 0, 0);
+        item.addView(name);
+
+        item.setOnClickListener(v -> openUrl(url));
+        row.addView(item, new LinearLayout.LayoutParams(0, -2, 1));
     }
 
     private void newTab(String url) {
-        GeckoSession newSession = new GeckoSession();
-        newSession.setContentDelegate(new GeckoSession.ContentDelegate() {});
-        newSession.open(runtime);
-        sessions.add(newSession);
-        tabUrls.add(url);
+        GeckoSession s = new GeckoSession();
+        s.setContentDelegate(new GeckoSession.ContentDelegate() {});
+        s.open(runtime);
+        sessions.add(s);
+        urls.add(url);
         currentTab = sessions.size() - 1;
-        session = newSession;
+        session = s;
+
+        browser.releaseSession();
         browser.setSession(session);
-        refreshTabs();
-        session.loadUri(url);
+
+        if (HOME.equals(url)) {
+            browser.setVisibility(View.GONE);
+            homePage.setVisibility(View.VISIBLE);
+            address.setText("");
+        } else {
+            browser.setVisibility(View.VISIBLE);
+            homePage.setVisibility(View.GONE);
+            session.loadUri(url);
+            address.setText(url);
+        }
     }
 
     private void switchTab(int index) {
@@ -159,49 +279,47 @@ public class MainActivity extends Activity {
         session = sessions.get(index);
         browser.releaseSession();
         browser.setSession(session);
-        refreshTabs();
-    }
 
-    private void refreshTabs() {
-        tabBar.removeAllViews();
-        for (int i = 0; i < sessions.size(); i++) {
-            final int index = i;
-            Button tab = new Button(this);
-            tab.setText((i == currentTab ? "● " : "") + "Tab " + (i + 1));
-            tab.setTextSize(10);
-            tabBar.addView(tab, new LinearLayout.LayoutParams(0, dp(38), 1));
-            tab.setOnClickListener(v -> switchTab(index));
+        String url = urls.get(index);
+        if (HOME.equals(url)) {
+            browser.setVisibility(View.GONE);
+            homePage.setVisibility(View.VISIBLE);
+            address.setText("");
+        } else {
+            browser.setVisibility(View.VISIBLE);
+            homePage.setVisibility(View.GONE);
+            address.setText(url);
         }
     }
 
     private void showTabs() {
-        if (sessions.isEmpty()) return;
         String[] names = new String[sessions.size()];
         for (int i = 0; i < names.length; i++) {
-            names[i] = "Tab " + (i + 1) + (i == currentTab ? " (current)" : "");
+            names[i] = (i == currentTab ? "✓ " : "") + "Tab " + (i + 1)
+                + " — " + (HOME.equals(urls.get(i)) ? "Home" : urls.get(i));
         }
+
         new AlertDialog.Builder(this)
-            .setTitle("Open tabs")
-            .setItems(names, (dialog, which) -> switchTab(which))
-            .setNegativeButton("Close current tab", (dialog, which) -> closeCurrentTab())
-            .setPositiveButton("New tab", (dialog, which) ->
-                newTab("https://www.google.com/"))
+            .setTitle("Tabs (" + sessions.size() + ")")
+            .setItems(names, (d, which) -> switchTab(which))
+            .setNeutralButton("Close current", (d, w) -> closeTab())
+            .setPositiveButton("+ New tab", (d, w) -> newTab(HOME))
             .show();
     }
 
-    private void closeCurrentTab() {
+    private void closeTab() {
         if (sessions.size() <= 1) {
-            Toast.makeText(this, "Keep at least one tab open", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "At least one tab must remain",
+                Toast.LENGTH_SHORT).show();
             return;
         }
+
         GeckoSession old = sessions.remove(currentTab);
-        tabUrls.remove(currentTab);
+        urls.remove(currentTab);
         browser.releaseSession();
         old.close();
         currentTab = Math.max(0, currentTab - 1);
-        session = sessions.get(currentTab);
-        browser.setSession(session);
-        refreshTabs();
+        switchTab(currentTab);
     }
 
     private void navigate() {
@@ -211,7 +329,8 @@ public class MainActivity extends Activity {
         String url;
         if (input.matches("(?i)^https?://.*")) {
             url = input;
-        } else if (input.matches("(?i)^[a-z0-9.-]+\\.[a-z]{2,}(:\\d+)?(/.*)?$")) {
+        } else if (input.matches(
+            "(?i)^[a-z0-9.-]+\\.[a-z]{2,}(:\\d+)?(/.*)?$")) {
             url = "https://" + input;
         } else {
             try {
@@ -221,58 +340,189 @@ public class MainActivity extends Activity {
                 url = "https://www.google.com/";
             }
         }
-
-        tabUrls.set(currentTab, url);
-        session.loadUri(url);
-        address.clearFocus();
-        ((android.view.inputmethod.InputMethodManager)
-            getSystemService(Context.INPUT_METHOD_SERVICE))
+        openUrl(url);
+        ((InputMethodManager)getSystemService(Context.INPUT_METHOD_SERVICE))
             .hideSoftInputFromWindow(address.getWindowToken(), 0);
+        address.clearFocus();
     }
 
-    private void loadHome() {
+    private void openUrl(String url) {
+        urls.set(currentTab, url);
+        address.setText(url);
+        homePage.setVisibility(View.GONE);
+        browser.setVisibility(View.VISIBLE);
+        session.loadUri(url);
+    }
+
+    private void goHome() {
+        urls.set(currentTab, HOME);
         address.setText("");
-        session.loadUri("https://www.google.com/");
+        browser.setVisibility(View.GONE);
+        homePage.setVisibility(View.VISIBLE);
     }
 
     private void saveBookmark() {
-        String url = tabUrls.get(currentTab);
-        if (url == null || url.isEmpty()) {
+        String url = urls.get(currentTab);
+        if (HOME.equals(url)) {
             Toast.makeText(this, "Open a website first", Toast.LENGTH_SHORT).show();
             return;
         }
-        String key = "bookmark_" + url.hashCode();
-        bookmarks.edit().putString(key, url).apply();
+        String key = "bm_" + url.hashCode();
+        prefs.edit().putString(key, url).apply();
         Toast.makeText(this, "Bookmark saved", Toast.LENGTH_SHORT).show();
     }
 
     private void showBookmarks() {
-        java.util.Map<String, ?> all = bookmarks.getAll();
-        ArrayList<String> urls = new ArrayList<>();
-        for (Object value : all.values()) {
-            if (value instanceof String) urls.add((String) value);
+        ArrayList<String> saved = new ArrayList<>();
+        for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
+            if (e.getKey().startsWith("bm_") && e.getValue() instanceof String) {
+                saved.add((String)e.getValue());
+            }
         }
-        if (urls.isEmpty()) {
-            Toast.makeText(this, "No bookmarks saved yet", Toast.LENGTH_SHORT).show();
+
+        if (saved.isEmpty()) {
+            Toast.makeText(this, "No saved bookmarks yet",
+                Toast.LENGTH_SHORT).show();
             return;
         }
-        String[] items = urls.toArray(new String[0]);
+
+        String[] items = saved.toArray(new String[0]);
         new AlertDialog.Builder(this)
-            .setTitle("Saved bookmarks")
-            .setItems(items, (dialog, which) -> {
-                String url = urls.get(which);
-                tabUrls.set(currentTab, url);
-                session.loadUri(url);
-                address.setText(url);
+            .setTitle("Bookmarks")
+            .setItems(items, (d, which) -> openUrl(saved.get(which)))
+            .setNeutralButton("Remove all", (d, w) -> {
+                for (String item : saved) {
+                    prefs.edit().remove("bm_" + item.hashCode()).apply();
+                }
+                Toast.makeText(this, "Bookmarks removed",
+                    Toast.LENGTH_SHORT).show();
             })
             .setNegativeButton("Close", null)
             .show();
     }
 
+    private void showHistory() {
+        ArrayList<String> history = new ArrayList<>();
+        for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
+            if (e.getKey().startsWith("hist_") && e.getValue() instanceof String) {
+                history.add((String)e.getValue());
+            }
+        }
+        if (history.isEmpty()) {
+            Toast.makeText(this, "No history yet", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+            .setTitle("History")
+            .setItems(history.toArray(new String[0]),
+                (d, which) -> openUrl(history.get(which)))
+            .setNegativeButton("Close", null)
+            .show();
+    }
+
+    private void showMenu() {
+        LinearLayout sheet = new LinearLayout(this);
+        sheet.setOrientation(LinearLayout.VERTICAL);
+        sheet.setPadding(dp(16), dp(12), dp(16), dp(20));
+        sheet.setBackground(shape(BG, 28));
+
+        TextView handle = text("━", 20, Color.LTGRAY);
+        handle.setGravity(Gravity.CENTER);
+        sheet.addView(handle, new LinearLayout.LayoutParams(-1, dp(30)));
+
+        sheet.addView(menuRow("♧   Extensions",
+            () -> info("Extension support is not implemented yet.")));
+
+        LinearLayout shortcuts = new LinearLayout(this);
+        shortcuts.setOrientation(LinearLayout.HORIZONTAL);
+        shortcuts.addView(menuButton("◷\nHistory", this::showHistory));
+        shortcuts.addView(menuButton("★\nBookmarks", this::showBookmarks));
+        shortcuts.addView(menuButton("↓\nDownloads",
+            () -> info("Download manager is coming next.")));
+        shortcuts.addView(menuButton("⚿\nPasswords",
+            () -> info("Password manager is not implemented yet.")));
+        sheet.addView(shortcuts);
+
+        sheet.addView(menuRow("☻   ZennyWeb account",
+            () -> info("Account sync is not available yet.")));
+        sheet.addView(menuRow("⌂   Customise homepage",
+            () -> info("Homepage customization is coming next.")));
+        sheet.addView(menuRow("⚙   Settings", this::showSettings));
+
+        AlertDialog dialog = new AlertDialog.Builder(this)
+            .setView(sheet)
+            .create();
+        dialog.show();
+    }
+
+    private View menuRow(String label, Runnable action) {
+        TextView row = text(label, 16, WHITE);
+        row.setPadding(dp(18), 0, dp(12), 0);
+        row.setBackground(shape(PANEL, 18));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, dp(58));
+        lp.setMargins(0, dp(5), 0, dp(5));
+        row.setLayoutParams(lp);
+        row.setOnClickListener(v -> action.run());
+        return row;
+    }
+
+    private View menuButton(String label, Runnable action) {
+        TextView b = text(label, 13, WHITE);
+        b.setGravity(Gravity.CENTER);
+        b.setBackground(shape(PANEL, 14));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(82), 1);
+        lp.setMargins(dp(2), dp(8), dp(2), dp(8));
+        b.setLayoutParams(lp);
+        b.setOnClickListener(v -> action.run());
+        return b;
+    }
+
+    private void showSettings() {
+        String[] options = {
+            "Homepage: Google",
+            "Clear browsing history",
+            "Clear saved bookmarks",
+            "About ZennyWeb"
+        };
+        new AlertDialog.Builder(this)
+            .setTitle("Settings")
+            .setItems(options, (d, which) -> {
+                if (which == 1) {
+                    for (String key : new ArrayList<>(prefs.getAll().keySet())) {
+                        if (key.startsWith("hist_")) prefs.edit().remove(key).apply();
+                    }
+                    info("History cleared.");
+                } else if (which == 2) {
+                    for (String key : new ArrayList<>(prefs.getAll().keySet())) {
+                        if (key.startsWith("bm_")) prefs.edit().remove(key).apply();
+                    }
+                    info("Bookmarks cleared.");
+                } else if (which == 3) {
+                    info("ZennyWeb — GeckoView browser");
+                } else {
+                    info("Homepage customization will be added later.");
+                }
+            })
+            .setNegativeButton("Close", null)
+            .show();
+    }
+
+    private void info(String message) {
+        new AlertDialog.Builder(this)
+            .setMessage(message)
+            .setPositiveButton("OK", null)
+            .show();
+    }
+
     @Override
     public void onBackPressed() {
-        if (session != null) session.goBack();
-        else super.onBackPressed();
+        if (homePage != null && homePage.getVisibility() == View.VISIBLE) {
+            super.onBackPressed();
+        } else if (session != null) {
+            session.goBack();
+        } else {
+            super.onBackPressed();
+        }
     }
 
     @Override
