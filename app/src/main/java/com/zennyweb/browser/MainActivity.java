@@ -15,9 +15,6 @@ import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.*;
 
-import androidx.core.graphics.Insets;
-import androidx.core.view.ViewCompat;
-import androidx.core.view.WindowInsetsCompat;
 
 import org.mozilla.geckoview.GeckoRuntime;
 import org.mozilla.geckoview.GeckoSession;
@@ -152,14 +149,19 @@ public class MainActivity extends Activity {
 
         setContentView(root);
 
-        ViewCompat.setOnApplyWindowInsetsListener(root, (view, windowInsets) -> {
-            Insets bars = windowInsets.getInsets(
-                WindowInsetsCompat.Type.systemBars()
-            );
-            view.setPadding(0, bars.top, 0, bars.bottom);
-            return windowInsets;
-        });
-        ViewCompat.requestApplyInsets(root);
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            root.setOnApplyWindowInsetsListener((view, windowInsets) -> {
+                android.graphics.Insets bars =
+                    windowInsets.getInsets(
+                        android.view.WindowInsets.Type.systemBars()
+                    );
+                view.setPadding(0, bars.top, 0, bars.bottom);
+                return windowInsets;
+            });
+        } else {
+            root.setPadding(0, dp(24), 0, dp(24));
+        }
+        root.requestApplyInsets();
 
         address.setOnEditorActionListener((v, action, event) -> {
             if (action == EditorInfo.IME_ACTION_GO ||
