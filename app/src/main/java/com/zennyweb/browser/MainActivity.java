@@ -350,8 +350,22 @@ public class MainActivity extends Activity {
             url = "https://" + input;
         } else {
             try {
-                url = "https://www.google.com/search?q=" +
-                    URLEncoder.encode(input, "UTF-8");
+                String engine = prefs.getString("search_engine", "Google");
+                String base;
+                switch (engine) {
+                    case "Bing":
+                        base = "https://www.bing.com/search?q=";
+                        break;
+                    case "DuckDuckGo":
+                        base = "https://duckduckgo.com/?q=";
+                        break;
+                    case "Brave":
+                        base = "https://search.brave.com/search?q=";
+                        break;
+                    default:
+                        base = "https://www.google.com/search?q=";
+                }
+                url = base + URLEncoder.encode(input, "UTF-8");
             } catch (Exception e) {
                 url = "https://www.google.com/";
             }
@@ -669,30 +683,169 @@ public class MainActivity extends Activity {
     }
 
     private void showSettings() {
-        String[] options = {
-            "Homepage: Google",
+        String[] sections = {
+            "General",
+            "Search engine",
+            "Homepage",
+            "Appearance",
+            "Privacy & security",
             "Clear browsing history",
             "Clear saved bookmarks",
+            "Bookmarks",
+            "History",
+            "Downloads",
             "About ZennyWeb"
         };
+
         new AlertDialog.Builder(this)
             .setTitle("Settings")
-            .setItems(options, (d, which) -> {
-                if (which == 1) {
-                    for (String key : new ArrayList<>(prefs.getAll().keySet())) {
-                        if (key.startsWith("hist_")) prefs.edit().remove(key).apply();
-                    }
-                    info("History cleared.");
-                } else if (which == 2) {
-                    for (String key : new ArrayList<>(prefs.getAll().keySet())) {
-                        if (key.startsWith("bm_")) prefs.edit().remove(key).apply();
-                    }
-                    info("Bookmarks cleared.");
-                } else if (which == 3) {
-                    info("ZennyWeb — GeckoView browser");
-                } else {
-                    info("Homepage customization will be added later.");
+            .setItems(sections, (dialog, which) -> {
+                switch (which) {
+                    case 0:
+                        showGeneralSettings();
+                        break;
+                    case 1:
+                        showSearchEngineSettings();
+                        break;
+                    case 2:
+                        showHomepageSettings();
+                        break;
+                    case 3:
+                        showThemeSettings();
+                        break;
+                    case 4:
+                        showPrivacySettings();
+                        break;
+                    case 5:
+                        new AlertDialog.Builder(this)
+                            .setTitle("Clear browsing history?")
+                            .setMessage("This removes the history saved by ZennyWeb.")
+                            .setNegativeButton("Cancel", null)
+                            .setPositiveButton("Clear", (d, w) -> {
+                                for (String key : new ArrayList<>(prefs.getAll().keySet())) {
+                                    if (key.startsWith("hist_")) {
+                                        prefs.edit().remove(key).apply();
+                                    }
+                                }
+                                info("Browsing history cleared.");
+                            }).show();
+                        break;
+                    case 6:
+                        new AlertDialog.Builder(this)
+                            .setTitle("Clear bookmarks?")
+                            .setMessage("This removes all saved ZennyWeb bookmarks.")
+                            .setNegativeButton("Cancel", null)
+                            .setPositiveButton("Clear", (d, w) -> {
+                                for (String key : new ArrayList<>(prefs.getAll().keySet())) {
+                                    if (key.startsWith("bm_")) {
+                                        prefs.edit().remove(key).apply();
+                                    }
+                                }
+                                info("Bookmarks cleared.");
+                            }).show();
+                        break;
+                    case 7:
+                        showBookmarks();
+                        break;
+                    case 8:
+                        showHistory();
+                        break;
+                    case 9:
+                        showDownloads();
+                        break;
+                    case 10:
+                        info("ZennyWeb — GeckoView browser");
+                        break;
                 }
+            })
+            .setNegativeButton("Close", null)
+            .show();
+    }
+
+    private void showGeneralSettings() {
+        String homepage = prefs.getString("homepage", "Google");
+        String engine = prefs.getString("search_engine", "Google");
+        String theme = prefs.getString("theme", "System default");
+        info("General settings\n\nHomepage: " + homepage
+            + "\nSearch engine: " + engine
+            + "\nAppearance: " + theme
+            + "\n\nChoose each option from the main Settings menu.");
+    }
+
+    private void showSearchEngineSettings() {
+        String[] engines = {"Google", "Bing", "DuckDuckGo", "Brave"};
+        String current = prefs.getString("search_engine", "Google");
+        int selected = 0;
+        for (int i = 0; i < engines.length; i++) {
+            if (engines[i].equals(current)) selected = i;
+        }
+        new AlertDialog.Builder(this)
+            .setTitle("Default search engine")
+            .setSingleChoiceItems(engines, selected, (d, which) -> {
+                prefs.edit().putString("search_engine", engines[which]).apply();
+                d.dismiss();
+                Toast.makeText(this, "Search engine: " + engines[which],
+                    Toast.LENGTH_SHORT).show();
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
+    private void showHomepageSettings() {
+        String[] choices = {"Google", "ZennyWeb home"};
+        String current = prefs.getString("homepage", "Google");
+        int selected = current.equals("ZennyWeb home") ? 1 : 0;
+        new AlertDialog.Builder(this)
+            .setTitle("Homepage preference")
+            .setSingleChoiceItems(choices, selected, (d, which) -> {
+                prefs.edit().putString("homepage", choices[which]).apply();
+                d.dismiss();
+                info("Homepage preference saved. Use the Home button to return to ZennyWeb home.");
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
+    private void showThemeSettings() {
+        String[] choices = {"System default", "Light", "Dark"};
+        String current = prefs.getString("theme", "System default");
+        int selected = 0;
+        for (int i = 0; i < choices.length; i++) {
+            if (choices[i].equals(current)) selected = i;
+        }
+        new AlertDialog.Builder(this)
+            .setTitle("Appearance")
+            .setSingleChoiceItems(choices, selected, (d, which) -> {
+                prefs.edit().putString("theme", choices[which]).apply();
+                d.dismiss();
+                info("Appearance preference saved. Full light/dark UI switching will be connected in a later update.");
+            })
+            .setNegativeButton("Cancel", null)
+            .show();
+    }
+
+    private void showPrivacySettings() {
+        String[] choices = {
+            "Enhanced tracking protection: Standard",
+            "Enhanced tracking protection: Strict",
+            "Enhanced tracking protection: Off",
+            "Clear browsing history"
+        };
+        String current = prefs.getString("tracking_protection", "Standard");
+        int selected = current.equals("Strict") ? 1 : current.equals("Off") ? 2 : 0;
+        new AlertDialog.Builder(this)
+            .setTitle("Privacy & security")
+            .setSingleChoiceItems(choices, selected, (d, which) -> {
+                if (which == 3) {
+                    d.dismiss();
+                    showSettings();
+                    return;
+                }
+                String level = which == 1 ? "Strict" : which == 2 ? "Off" : "Standard";
+                prefs.edit().putString("tracking_protection", level).apply();
+                d.dismiss();
+                info("Tracking protection preference saved as " + level
+                    + ". Enforcement by GeckoView still needs to be connected.");
             })
             .setNegativeButton("Close", null)
             .show();
