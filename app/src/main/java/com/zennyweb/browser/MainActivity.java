@@ -1,12 +1,22 @@
 package com.zennyweb.browser;
 
 import android.app.Activity;
+import java.net.URI;
+import java.io.FileOutputStream;
+import java.io.File;
+import java.io.OutputStream;
+import java.io.InputStream;
+import android.provider.MediaStore;
+import android.os.Environment;
+import android.net.Uri;
+import android.content.ContentValues;
 import android.app.AlertDialog;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.text.InputType;
 import android.view.Gravity;
@@ -249,7 +259,15 @@ public class MainActivity extends Activity {
 
     private void newTab(String url) {
         GeckoSession s = new GeckoSession();
-        s.setContentDelegate(new GeckoSession.ContentDelegate() {});
+        s.setContentDelegate(new GeckoSession.ContentDelegate() {
+            @Override
+            public void onExternalResponse(
+                GeckoSession source,
+                org.mozilla.geckoview.WebResponse response
+            ) {
+                startDownload(response);
+            }
+        });
         s.open(runtime);
         sessions.add(s);
         urls.add(url);
@@ -423,6 +441,177 @@ public class MainActivity extends Activity {
             .show();
     }
 
+
+    private String safeFileName(String raw) {
+        String name = raw == null ? "download" : raw;
+        name = name.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
+        if (name.isEmpty() || name.equals(".") || name.equals("..")) {
+            name = "download";
+        }
+        return name;
+    }
+
+    private void startDownload(org.mozilla.geckoview.WebResponse response) {
+        if (response == null || response.body == null) {
+            if (response != null && response.body == null) {
+                Toast.makeText(this, "No downloadable file data was provided",
+                    Toast.LENGTH_LONG).show();
+            }
+            return;
+        }
+
+        String name = "download_" + System.currentTimeMillis();
+        try {
+            String path = Uri.parse(response.uri).getLastPathSegment();
+            if (path != null && !path.trim().isEmpty()) {
+                name = java.net.URLDecoder.decode(path, "UTF-8");
+            }
+        } catch (Exception ignored) {
+        }
+        name = safeFileName(name);
+
+        final String fileName = name;
+        final String recordKey = "dl_" + System.currentTimeMillis();
+
+        prefs.edit().putString(recordKey, fileName + " | Downloading").apply();
+        Toast.makeText(this, "Downloading: " + fileName,
+            Toast.LENGTH_SHORT).show();
+
+        new Thread(() -> {
+            Uri savedUri = null;
+            OutputStream out = null;
+            InputStream in = response.body;
+            boolean success = false;
+            String error = "";
+
+            try {
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    ContentValues values = new ContentValues();
+                    values.put(MediaStore.Downloads.DISPLAY_NAME, fileName);
+                    values.put(MediaStore.Downloads.MIME_TYPE,
+                        "application/octet-stream");
+                    values.put(MediaStore.Downloads.RELATIVE_PATH,
+                        Environment.DIRECTORY_DOWNLOADS + "/ZennyWeb");
+                    values.put(MediaStore.Downloads.IS_PENDING, 1);
+
+                    savedUri = getContentResolver().insert(
+                        MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+                    if (savedUri == null) {
+                        throw new java.io.IOException(
+                            "Could not create Downloads file");
+                    }
+                    out = getContentResolver().openOutputStream(savedUri);
+                } else {
+                    File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
+                    if (dir == null) throw new java.io.IOException(
+                        "Downloads folder unavailable");
+                    if (!dir.exists()) dir.mkdirs();
+                    File file = new File(dir, fileName);
+                    out = new FileOutputStream(file);
+                    savedUri = Uri.fromFile(file);
+                }
+
+                if (out == null) throw new java.io.IOException(
+                    "Could not open output file");
+
+                byte[] buffer = new byte[16384];
+                int count;
+                while ((count = in.read(buffer)) != -1) {
+                    out.write(buffer, 0, count);
+                }
+                out.flush();
+                success = true;
+            } catch (Exception e) {
+                error = e.getMessage() == null ? "Download failed" : e.getMessage();
+            } finally {
+                try { if (in != null) in.close(); } catch (Exception ignored) {}
+                try { if (out != null) out.close(); } catch (Exception ignored) {}
+            }
+
+            final boolean completed = success;
+            final String message = error;
+            final Uri finalUri = savedUri;
+
+            if (completed && finalUri != null &&
+                android.os.Build.VERSION.SDK_INT >= 29) {
+                ContentValues done = new ContentValues();
+                done.put(MediaStore.Downloads.IS_PENDING, 0);
+                try {
+                    getContentResolver().update(finalUri, done, null, null);
+                } catch (Exception ignored) {
+                }
+            }
+
+            String record = fileName + " | " +
+                (completed ? "Completed" : "Failed: " + message) +
+                (finalUri == null ? "" : " | " + finalUri.toString());
+            prefs.edit().putString(recordKey, record).apply();
+
+            runOnUiThread(() -> Toast.makeText(
+                this,
+                completed ? "Download complete: " + fileName
+                    : "Download failed: " + message,
+                Toast.LENGTH_LONG
+            ).show());
+        }).start();
+    }
+
+    private void showDownloads() {
+        ArrayList<String> keys = new ArrayList<>();
+        ArrayList<String> labels = new ArrayList<>();
+
+        for (Map.Entry<String, ?> entry : prefs.getAll().entrySet()) {
+            if (entry.getKey().startsWith("dl_") &&
+                entry.getValue() instanceof String) {
+                keys.add(entry.getKey());
+                labels.add((String) entry.getValue());
+            }
+        }
+
+        java.util.Collections.sort(keys, java.util.Collections.reverseOrder());
+        labels.clear();
+        for (String key : keys) labels.add(prefs.getString(key, "Download"));
+
+        if (labels.isEmpty()) {
+            new AlertDialog.Builder(this)
+                .setTitle("Downloads")
+                .setMessage("No downloads yet. Download a file from a website and it will appear here.")
+                .setPositiveButton("OK", null)
+                .show();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+            .setTitle("Downloads")
+            .setItems(labels.toArray(new String[0]), (dialog, which) -> {
+                String record = labels.get(which);
+                int pos = record.lastIndexOf(" | content://");
+                if (pos >= 0) {
+                    String uriText = record.substring(pos + 3);
+                    try {
+                        Intent intent = new Intent(Intent.ACTION_VIEW);
+                        intent.setDataAndType(Uri.parse(uriText),
+                            "*/*");
+                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        info("File saved, but no app could open it.");
+                    }
+                } else {
+                    info(record);
+                }
+            })
+            .setNeutralButton("Clear list", (dialog, which) -> {
+                for (String key : new ArrayList<>(prefs.getAll().keySet())) {
+                    if (key.startsWith("dl_")) prefs.edit().remove(key).apply();
+                }
+                Toast.makeText(this, "Download list cleared",
+                    Toast.LENGTH_SHORT).show();
+            })
+            .setNegativeButton("Close", null)
+            .show();
+    }
+
     private void showMenu() {
         LinearLayout sheet = new LinearLayout(this);
         sheet.setOrientation(LinearLayout.VERTICAL);
@@ -440,8 +629,7 @@ public class MainActivity extends Activity {
         shortcuts.setOrientation(LinearLayout.HORIZONTAL);
         shortcuts.addView(menuButton("◷\nHistory", this::showHistory));
         shortcuts.addView(menuButton("★\nBookmarks", this::showBookmarks));
-        shortcuts.addView(menuButton("↓\nDownloads",
-            () -> info("Download manager is coming next.")));
+        shortcuts.addView(menuButton("↓\nDownloads", this::showDownloads));
         shortcuts.addView(menuButton("⚿\nPasswords",
             () -> info("Password manager is not implemented yet.")));
         sheet.addView(shortcuts);
